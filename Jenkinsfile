@@ -26,7 +26,9 @@ pipeline {
         stage("build image") {
             steps {
                 script {
-                    buildImage()
+                    buildImage('gabiand/demo-app:jma3.0')
+                    dockerLogin();
+                    dockerPush 'gabiand/demo-app:jma3.0'
                 }
             }
         }
