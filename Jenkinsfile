@@ -61,6 +61,7 @@ pipeline {
                         sh "git remote set-url origin https://${USER}:${PASS}@github.com/gabidinica/java-maven-app.git"
                         sh 'git add .'
                         sh 'git commit -m "ci: version bump "'
+                        echo "⬇️ Pulling latest changes with rebase..."
                         sh 'git pull --rebase origin jenkins-branch'
                         sh 'git push origin HEAD:jenkins-branch'
                     }
