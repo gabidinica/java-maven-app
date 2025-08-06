@@ -1,10 +1,9 @@
-def gv
-
 pipeline {   
     agent any
     tools {
         maven 'maven-3.9'
     }
+
     stages {
         stage('increment version'){
             steps{
@@ -19,6 +18,7 @@ pipeline {
                 }
             }
         }
+
         stage("build app") {
             steps {
                 script {
@@ -27,6 +27,7 @@ pipeline {
                 }
             }
         }
+
         stage("build image") {
             steps {
                 script {
@@ -38,6 +39,8 @@ pipeline {
                 }
             }
         }
+        }
+
         stage("deploy") {
             steps {
                 script {
@@ -46,5 +49,4 @@ pipeline {
             }
         }               
     }
-} 
 }
