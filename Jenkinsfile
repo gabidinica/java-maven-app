@@ -1,80 +1,42 @@
 #!/usr/bin/env groovy
 
-library identifier: 'jenkins-shared-library@master', retriever: modernSCM(
-  [$class: 'GitSCMSource',
-  remote: '<add-your-git-remote-folder>',
-  credentialsId: 'github-credentials'
-  ]
-)
-
 pipeline {   
   agent any
-  tools {
-    maven 'Maven'
-  }
   environment {
-    IMAGE_NAME = 'gabidin/demo-app:java-maven-2.0'
+    ANSIBLE_SERVER = "droplet-ip"
   }
   stages {
-    stage("build app") {
+    stage("copy files to ansible server") {
       steps {
         script {
-          echo 'building application jar...'
-          buildJar()
-        }
-      }
-    }
-    stage("build image") {
-      steps {
-        script {
-          echo 'building docker image...'
-          buildImage(env.IMAGE_NAME)
-          dockerLogin()
-          dockerPush(env.IMAGE_NAME)
-        }
-      }
-    }
-    stage("provision server") {
-      environment {
-        AWS_ACCESS_KEY_ID = credentials('jenkins_aws_access_key_id')
-        AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws_secret_access_key')
-        TF_VAR_env_prefix = 'test'
-      }
-      steps {
-        script {
-          dir('terraform') {
-            sh "terraform init"
-            sh "terraform apply --auto-approve"
-            EC2_PUBLIC_IP = sh(
-              script: "terraform output ec2-public_ip",
-              returnStdout: true
-            ).trim()
+          echo "copying all neccessary files to ansible control node"
+          sshagent(['ansible-server-key']) {
+            sh "scp -o StrictHostKeyChecking=no ansible/* root@${ANSIBLE_SERVER}:/root"
+
+            withCredentials([sshUserPrivateKey(credentialsId: 'ec2-server-key', keyFileVariable: 'keyfile', usernameVariable: 'user')]) {
+              sh 'scp $keyfile root@$ANSIBLE_SERVER:/root/ssh-key.pem'
+            }
           }
         }
       }
     }
-    stage("deploy") {
-      environment {
-        DOCKER_CREDS = credentials('docker-hub-repo')
-      }
+    stage ("execute ansible playbook") {
       steps {
         script {
-          echo "waiting for EC2 server to initialize"
-          sleep(time: 90, unit: "SECONDS")
+          echo "calling ansible playbook to configure ec2 instances"
+          def remote = [:]
+          remote.name = "ansible-server"
+          remote.host = ANSIBLE_SERVER
+          remote.allowAnyHosts = true
 
-          echo 'deploying docker image to EC2...'
-          echo "${EC2_PUBLIC_IP}"
-          
-          def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME} ${DOCKER_CREDS_USR} ${DOCKER_CREDS_PSW}"
-          def ec2Instance = "ec2-user@${EC2_PUBLIC_IP}"
-
-          sshagent(['server-ssh-key']) {
-            sh "scp -o StrictHostKeyChecking=no server-cmds.sh ${ec2Instance}:/home/ec2-user"
-            sh "scp -o StrictHostKeyChecking=no docker-compose.yaml ${ec2Instance}:/home/ec2-user"
-            sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
+          withCredentials([sshUserPrivateKey(credentialsId: 'ansible-server-key', keyFileVariable: 'keyfile', usernameVariable: 'user')]) {
+            remote.user = user
+            remote.identityFile = keyfile
+            sshScript remote: remote, script: "prepare-ansible-server.sh"
+            sshCommand remote: remote, command: "ansible-playbook my-playbook.yaml"
           }
         }
       }
-    }               
+    }      
   }
-}
+} 
